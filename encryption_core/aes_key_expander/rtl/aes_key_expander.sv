@@ -2,8 +2,9 @@
 
 module aes_key_expander#(
                             // parameters
-                            parameter KEY_WIDTH=128
-
+                            parameter KEY_WIDTH=128,
+                            parameter SBOX_ROW_NO = 4,
+                            parameter SBOX_COL_NO = 1
                         )(
                             // IO ports
                             input logic [7:0] cipher_key [3:0] [3:0],
@@ -25,6 +26,16 @@ module aes_key_expander#(
     logic key_gen_done;
     logic [3:0] key_counter;
 
+    // key gen algorithm related registers 
+    logic [7:0] root_word [3:0];
+    logic [7:0] shifted_root_word [3:0];
+    logic [7:0] sb_root_word[3:0];
+    logic [2:0] root_word_index;
+
+    // sbox related signals
+    logic sbox_en;
+    
+
     // generate keys
     always @(posedge clk or negedge resetn) begin
         if(!resetn) begin
@@ -45,7 +56,16 @@ module aes_key_expander#(
             if(encrypt_en) begin
                 if(!key_gen_done) begin
                     if(key_counter == 0) begin
-                        $display("round 0 key generation");
+                        // get root word from cipher key
+                        for(logic [2:0] i=0; i<4; i++) begin
+                            root_word[i] = cipher_key[3][i];
+                        end
+                        $display("root_word:%p", root_word);
+                        // perform shift operation on root word
+                        shift_root_word(root_word, shifted_root_word);
+
+                        // increment the key counter for round 2 key generation
+                        key_counter +=1;
                     end
                     else if(key_counter == 1) begin
                         $display("round 1 key generation ..");
@@ -110,13 +130,44 @@ module aes_key_expander#(
     assign rcon_matrix[4][7] = 8'h0;
     assign rcon_matrix[4][8] = 8'h0;
     assign rcon_matrix[4][9] = 8'h0;
-
+/*
+    // Instantiation of SBOX module
+    sbox#(
+            // parameters
+            .NO_ROWS(SBOX_ROW_NO),
+            .NO_COLS(SBOX_COL_NO)
+        ) I_AES_KEY_GEN_SBOX(
+            // IO ports
+            .resetn(resetn),
+            .sbox_en(sbox_en),
+            .sbox_ip_char_matrix(root_word),
+            .sbox_ip_char_row_mask(),
+            .sbox_ip_char_col_mask(),
+            .sbox_op_char_matrix_valid(),
+            .sbox_op_char_matrix()
+        );
+*/
 
     ////////////////////////////////////////////////////// functions ///////////////////////////////////////////////////////////
 
-    /////////////////////////////////////
-    // function name:
-    // parameters:
-    // description:
-    /////////////////////////////////////
+    //////////////////////////////////////////////////////////////////////////////////////////////
+    // function name: shift_root_word                                                           //
+    // parameters:                                                                              //
+    //              -> logic [7:0] root_word [3:0] : root word matrix                           //
+    //              -> ref logic [7:0] shifted_root_word [3:0] : shifted root word matrix       //
+    // description: Perform shift operation on root_word                                        //
+    //////////////////////////////////////////////////////////////////////////////////////////////
+    function automatic void shift_root_word(logic [7:0] root_word [3:0], ref logic [7:0] shifted_root_word [3:0]);
+        begin
+            logic [1:0] root_word_index;
+            logic [1:0] shifted_root_word_index;
+            shifted_root_word_index = 3;
+
+            for(root_word_index=0; root_word_index<4; root_word_index++) begin
+                shifted_root_word[shifted_root_word_index] = root_word[root_word_index];
+                shifted_root_word_index += 1; 
+                $display("FROM FUNC :: shift_root_word :: shifted_root_word_index:%0d, root_word_index: %0d", shifted_root_word_index, root_word_index);   
+            end
+        end
+    endfunction
 endmodule
