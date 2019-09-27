@@ -18,23 +18,27 @@ module aes_key_expander#(
     
     // round constant matrix
     logic [7:0] rcon_matrix [4:0] [9:0];
+    logic [4:0] rcon_col_index;
 
     // register for holding round keys
     logic [7:0] round_key_matrix [3:0] [3:0][9:0];
+    logic [1:0] round_key_row_index;
+    logic [1:0] round_key_col_index;
 
     // counter and control flags for round key generation
     logic key_gen_done;
     logic [3:0] key_counter;
 
-    // key gen algorithm related registers 
-    logic [7:0] root_word [3:0];
-    logic [7:0] shifted_root_word [3:0];
-    logic [7:0] sb_root_word[3:0];
+    // key gen algorithm related registers
+    logic [1:0] cipher_key_col_index;           // select the columns of cipher key matrix 
+    logic [7:0] root_word [3:0];                // root word for key generation
+    logic [7:0] shifted_root_word [3:0];        // root word after column shifting
+    logic [7:0] sb_root_word[3:0];              // rootword after subbytes
     logic [2:0] root_word_index;
 
     // sbox related signals
-    logic sbox_en;
-    
+    logic sbox_en;              // sbox enable
+    logic sbox_op_vld;          // sbox output valid
 
     // generate keys
     always @(posedge clk or negedge resetn) begin
@@ -46,7 +50,8 @@ module aes_key_expander#(
             // reset control flags
             key_gen_done = 0;
             key_counter = 0;
-
+            sbox_en = 0;
+            rcon_col_index = 0;
             // reset round key matrix
             foreach(round_key_matrix[i,j,k]) begin
                 round_key_matrix[i][j][k] = 0;
@@ -55,20 +60,33 @@ module aes_key_expander#(
         else begin
             if(encrypt_en) begin
                 if(!key_gen_done) begin
-                    if(key_counter == 0) begin
+                    if(key_counter == 0 && sbox_op_vld == 0) begin
                         // get root word from cipher key
                         for(logic [2:0] i=0; i<4; i++) begin
-                            root_word[i] = cipher_key[3][i];
+                            root_word[i] = cipher_key[i][3];
                         end
-                        $display("root_word:%p", root_word);
                         // perform shift operation on root word
                         shift_root_word(root_word, shifted_root_word);
-
-                        // increment the key counter for round 2 key generation
-                        key_counter +=1;
+                        // perform sbox substitution
+                        sbox_en = 1;
                     end
+                    else if(key_counter == 0 && sbox_op_vld == 1) begin
+                        `ifdef DEBUG_AES_KEY
+                            $display("shifted_root_word: %0p, sb_root_word:%0p", shifted_root_word, sb_root_word);
+                        `endif
+                        // perform xor operation with sb_root_word, cipher_key_matrix column 0 and round constant
+                        rcon_col_index = 0;
+                        cipher_key_col_index = 0;
+                        round_key_col_index = 0;
+                        for(logic [4:0] i=0; i<$size(sb_root_word); i++) begin
+                            round_key_matrix[i][round_key_col_index][key_counter] = cipher_key[i][cipher_key_col_index] ^ sb_root_word[i] ^ rcon_matrix[i][rcon_col_index];
+                        end
+                        $display("round_key_matrix:%0p", round_key_matrix);
+                        // increment the key counter
+                        key_counter += 1;
+                    end    
                     else if(key_counter == 1) begin
-                        $display("round 1 key generation ..");
+                        //$display("round 1 key generation ..");
                     end
                 end
             end    
@@ -130,44 +148,46 @@ module aes_key_expander#(
     assign rcon_matrix[4][7] = 8'h0;
     assign rcon_matrix[4][8] = 8'h0;
     assign rcon_matrix[4][9] = 8'h0;
-/*
-    // Instantiation of SBOX module
-    sbox#(
-            // parameters
-            .NO_ROWS(SBOX_ROW_NO),
-            .NO_COLS(SBOX_COL_NO)
-        ) I_AES_KEY_GEN_SBOX(
-            // IO ports
-            .resetn(resetn),
-            .sbox_en(sbox_en),
-            .sbox_ip_char_matrix(root_word),
-            .sbox_ip_char_row_mask(),
-            .sbox_ip_char_col_mask(),
-            .sbox_op_char_matrix_valid(),
-            .sbox_op_char_matrix()
-        );
-*/
 
-    ////////////////////////////////////////////////////// functions ///////////////////////////////////////////////////////////
+    // Instantiation of key_gen_sbox module
+    key_gen_sbox#(
+                    // parameters
+                    .NO_ROWS(4),
+                    .SBOX_ROWS(16),
+                    .SBOX_COLS(16)
+                ) I_AES_KEY_GEN_SBOX(
+                    // IO ports
+                    .resetn(resetn),
+                    .sbox_en(sbox_en),
+                    .sbox_ip_char_matrix(shifted_root_word),
+                    .sbox_op_char_matrix_valid(sbox_op_vld),
+                    .sbox_op_char_matrix(sb_root_word)
+                );
+
+
+    ////////////////////////////////////////////////////// Task and functions ///////////////////////////////////////////////////
 
     //////////////////////////////////////////////////////////////////////////////////////////////
-    // function name: shift_root_word                                                           //
+    // task name: shift_root_word                                                           //
     // parameters:                                                                              //
     //              -> logic [7:0] root_word [3:0] : root word matrix                           //
     //              -> ref logic [7:0] shifted_root_word [3:0] : shifted root word matrix       //
     // description: Perform shift operation on root_word                                        //
     //////////////////////////////////////////////////////////////////////////////////////////////
-    function automatic void shift_root_word(logic [7:0] root_word [3:0], ref logic [7:0] shifted_root_word [3:0]);
+    task shift_root_word(input logic [7:0] root_word[3:0], output logic [7:0] shifted_root_word[3:0]);
+        logic [2:0] i;  
+        logic [1:0] j;  // use overflow to perform shift operation
         begin
-            logic [1:0] root_word_index;
-            logic [1:0] shifted_root_word_index;
-            shifted_root_word_index = 3;
-
-            for(root_word_index=0; root_word_index<4; root_word_index++) begin
-                shifted_root_word[shifted_root_word_index] = root_word[root_word_index];
-                shifted_root_word_index += 1; 
-                $display("FROM FUNC :: shift_root_word :: shifted_root_word_index:%0d, root_word_index: %0d", shifted_root_word_index, root_word_index);   
+            j=$size(root_word)-1;
+            for(i=0; i<$size(root_word); i++) begin
+                shifted_root_word[j] = root_word[i];
+                j++;
             end
+            `ifdef DEBUG_AES_KEY
+                $display("root_word:%0p", root_word);
+                $display("shifted_root_word:%0p", shifted_root_word);
+            `endif
         end
-    endfunction
+    endtask 
+
 endmodule
