@@ -42,6 +42,13 @@ module tb;
         resetn = 1;
         @(negedge clk);
         encrypt_en = 1;
+        wait(key_rdy == 1);
+        @(negedge clk);
+        repeat(10) begin
+            @(negedge clk);
+            key_sel = key_sel + 1;
+            @(negedge clk);
+        end
     end
 
     // terminate simualtion after timeout
