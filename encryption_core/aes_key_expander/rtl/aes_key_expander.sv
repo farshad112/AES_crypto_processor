@@ -60,36 +60,61 @@ module aes_key_expander#(
         else begin
             if(encrypt_en) begin
                 if(!key_gen_done) begin
-                    if(key_counter == 0 && sbox_op_vld == 0) begin
-                        // get root word from cipher key
-                        for(logic [2:0] i=0; i<4; i++) begin
-                            root_word[i] = cipher_key[i][3];
+                    if(key_counter < 10 && sbox_op_vld == 0) begin
+                        if(key_counter == 0) begin
+                            // get root word from cipher key
+                            for(logic [2:0] i=0; i<4; i++) begin
+                                root_word[i] = cipher_key[i][3];
+                            end
                         end
+                        else begin
+                            // get root word from round key [key_counter-1]
+                            for(logic [2:0] i=0; i<4; i++) begin
+                                root_word[i] = round_key_matrix[i][3][key_counter-1];
+                            end
+                        
+                        end
+                        $display("root_word:%0p", root_word);
                         // perform shift operation on root word
                         shift_root_word(root_word, shifted_root_word);
                         // perform sbox substitution
                         sbox_en = 1;
                     end
-                    else if(key_counter == 0 && sbox_op_vld == 1) begin
-                        `ifdef DEBUG_AES_KEY
-                            $display("shifted_root_word: %0p, sb_root_word:%0p", shifted_root_word, sb_root_word);
-                        `endif
+                    else if(key_counter < 10 && sbox_op_vld == 1) begin
+                        $display("shifted_root_word: %0p, sb_root_word:%0p", shifted_root_word, sb_root_word);
                         for(logic [4:0] p=0; p<4; p++) begin
                             // perform xor operation with sb_root_word, cipher_key_matrix column 0 and round constant
                             $display("p:%0d", p);
-                            rcon_col_index = 0;
+                            rcon_col_index = key_counter;
                             cipher_key_col_index = p;
                             round_key_col_index = p;
+                            print_rcon_col(rcon_matrix, key_counter);
                             if(p==0) begin
-                                // first column of round key 1
-                                for(logic [4:0] i=0; i<$size(sb_root_word); i++) begin
-                                    round_key_matrix[i][round_key_col_index][key_counter] = cipher_key[i][cipher_key_col_index] ^ sb_root_word[i] ^ rcon_matrix[i][rcon_col_index];
+                                if(key_counter == 0) begin
+                                    // first column of round key 1
+                                    for(logic [4:0] i=0; i<$size(sb_root_word); i++) begin
+                                        round_key_matrix[i][round_key_col_index][key_counter] = cipher_key[i][cipher_key_col_index] ^ sb_root_word[i] ^ rcon_matrix[i][rcon_col_index];
+                                    end
+                                end
+                                else begin
+                                    // first column of round key 2 and onward
+                                    for(logic [4:0] i=0; i<$size(sb_root_word); i++) begin
+                                        round_key_matrix[i][round_key_col_index][key_counter] = round_key_matrix[i][round_key_col_index][key_counter-1] ^ sb_root_word[i] ^ rcon_matrix[i][rcon_col_index];
+                                    end
                                 end
                             end
                             else begin
-                                // perform xor operation with first column of round key 1 and 2nd column of cipher key
-                                for(logic [4:0] i=0; i<$size(sb_root_word); i++) begin
-                                    round_key_matrix[i][round_key_col_index][key_counter] = cipher_key[i][cipher_key_col_index] ^ round_key_matrix[i][round_key_col_index-1][key_counter];
+                                if(key_counter == 0) begin
+                                    // perform xor operation with first column of round key 1 and 2nd column of cipher key
+                                    for(logic [4:0] i=0; i<$size(sb_root_word); i++) begin
+                                        round_key_matrix[i][round_key_col_index][key_counter] = cipher_key[i][cipher_key_col_index] ^ round_key_matrix[i][round_key_col_index-1][key_counter];
+                                    end
+                                end
+                                else begin
+                                    // perform xor operation with first column of round key 1 and 2nd column of round key[key_counter-1]
+                                    for(logic [4:0] i=0; i<$size(sb_root_word); i++) begin
+                                        round_key_matrix[i][round_key_col_index][key_counter] = round_key_matrix[i][round_key_col_index][key_counter-1] ^ round_key_matrix[i][round_key_col_index-1][key_counter];
+                                    end
                                 end
                             end
                         end
@@ -99,11 +124,35 @@ module aes_key_expander#(
                         key_counter += 1;
                         sbox_en = 0;
                     end    
-                    else if(key_counter == 1) begin
-                        //$display("round 1 key generation ..");
+                    else begin
+                        key_rdy = 1;
+                        key_gen_done = 1;
                     end
                 end
-            end    
+                else begin  // key is ready to deliver
+                    // deleiver the generated key to the output based on the selector pin
+                    if(key_sel == 0) begin
+                        foreach(round_key[i,j]) begin
+                            round_key[i][j] = cipher_key[i][j];
+                        end
+                    end
+                    else if(key_sel> 0 && key_sel < 11) begin
+                        foreach(round_key[i,j]) begin
+                            round_key[i][j] = round_key_matrix[i][j][key_sel-1];
+                        end
+                    end
+                    else begin  // invalid key selector value
+                        key_rdy = 0;
+                        foreach(round_key[i,j]) begin
+                            round_key[i][j] = 0;
+                        end
+                    end
+                end
+            end
+            else begin
+                key_gen_done = 0;
+                key_rdy = 0;
+            end
         end
     end    
 
@@ -202,7 +251,7 @@ module aes_key_expander#(
                 $display("shifted_root_word:%0p", shifted_root_word);
             `endif
         end
-    endtask 
+    endtask
 
     //////////////////////////////////////////////////////////////////////////////////////////////
     // function name: print_matrix                                                              //
@@ -216,4 +265,17 @@ module aes_key_expander#(
             $display("%s[%d][%d][%d]:%0h", name, i, j, k, mat[i][j][k]);
         end
     endfunction    
+
+    //////////////////////////////////////////////////////////////////////////////////////////////
+    // function name: print_rcon_col                                                            //
+    // parameters:                                                                              //
+    //                                                                                          //
+    //                                                                                          //
+    // description: Print the matrix                                                            //
+    //////////////////////////////////////////////////////////////////////////////////////////////
+    function void print_rcon_col(logic [7:0] rcon[4:0][9:0], logic [4:0] col=0);
+        for(int i=0; i<5; i++) begin
+            $display("rcon[%0d][%0d]:%0h", i, col, rcon[i][col]);
+        end
+    endfunction
 endmodule
