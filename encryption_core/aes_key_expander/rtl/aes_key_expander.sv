@@ -74,16 +74,30 @@ module aes_key_expander#(
                         `ifdef DEBUG_AES_KEY
                             $display("shifted_root_word: %0p, sb_root_word:%0p", shifted_root_word, sb_root_word);
                         `endif
-                        // perform xor operation with sb_root_word, cipher_key_matrix column 0 and round constant
-                        rcon_col_index = 0;
-                        cipher_key_col_index = 0;
-                        round_key_col_index = 0;
-                        for(logic [4:0] i=0; i<$size(sb_root_word); i++) begin
-                            round_key_matrix[i][round_key_col_index][key_counter] = cipher_key[i][cipher_key_col_index] ^ sb_root_word[i] ^ rcon_matrix[i][rcon_col_index];
+                        for(logic [4:0] p=0; p<4; p++) begin
+                            // perform xor operation with sb_root_word, cipher_key_matrix column 0 and round constant
+                            $display("p:%0d", p);
+                            rcon_col_index = 0;
+                            cipher_key_col_index = p;
+                            round_key_col_index = p;
+                            if(p==0) begin
+                                // first column of round key 1
+                                for(logic [4:0] i=0; i<$size(sb_root_word); i++) begin
+                                    round_key_matrix[i][round_key_col_index][key_counter] = cipher_key[i][cipher_key_col_index] ^ sb_root_word[i] ^ rcon_matrix[i][rcon_col_index];
+                                end
+                            end
+                            else begin
+                                // perform xor operation with first column of round key 1 and 2nd column of cipher key
+                                for(logic [4:0] i=0; i<$size(sb_root_word); i++) begin
+                                    round_key_matrix[i][round_key_col_index][key_counter] = cipher_key[i][cipher_key_col_index] ^ round_key_matrix[i][round_key_col_index-1][key_counter];
+                                end
+                            end
                         end
                         $display("round_key_matrix:%0p", round_key_matrix);
+                        print_matrix(round_key_matrix, "round_key_matrix");
                         // increment the key counter
                         key_counter += 1;
+                        sbox_en = 0;
                     end    
                     else if(key_counter == 1) begin
                         //$display("round 1 key generation ..");
@@ -168,7 +182,7 @@ module aes_key_expander#(
     ////////////////////////////////////////////////////// Task and functions ///////////////////////////////////////////////////
 
     //////////////////////////////////////////////////////////////////////////////////////////////
-    // task name: shift_root_word                                                           //
+    // task name: shift_root_word                                                               //
     // parameters:                                                                              //
     //              -> logic [7:0] root_word [3:0] : root word matrix                           //
     //              -> ref logic [7:0] shifted_root_word [3:0] : shifted root word matrix       //
@@ -190,4 +204,16 @@ module aes_key_expander#(
         end
     endtask 
 
+    //////////////////////////////////////////////////////////////////////////////////////////////
+    // function name: print_matrix                                                              //
+    // parameters:                                                                              //
+    //                                                                                          //
+    //                                                                                          //
+    // description: Print the matrix                                                            //
+    //////////////////////////////////////////////////////////////////////////////////////////////
+    function void print_matrix(logic [7:0] mat[3:0][3:0][9:0], string name="mat");
+        foreach(mat[i,j,k]) begin
+            $display("%s[%d][%d][%d]:%0h", name, i, j, k, mat[i][j][k]);
+        end
+    endfunction    
 endmodule
