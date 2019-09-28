@@ -10,7 +10,7 @@ if [ -z "$mode" ]; then
     mode="gui"
 fi
 
-if [ "$mode" -eq "gui" ]; then
+if [ "$mode" == "gui" ]; then
     irun -f filelist.f -timescale 1ns/1ps -access +rwc -gui
 else
     irun -f filelist.f -timescale 1ns/1ps -access +rwc
