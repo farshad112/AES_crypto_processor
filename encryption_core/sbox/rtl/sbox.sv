@@ -12,7 +12,7 @@ module sbox#(
                 input logic [NO_ROWS-1:0] sbox_ip_char_row_mask,                        // sbox row enable mask for selecting the rows for sbox substitution
                 input logic [NO_COLS-1:0] sbox_ip_char_col_mask,                        // sbox column enable mask for selecting the columns for sbox substitution
                 output logic sbox_op_char_matrix_valid,                                 // sbox output valid
-                output logic [15:0] sbox_op_char_matrix [NO_ROWS-1:0] [NO_COLS-1:0]     // sbox output
+                output logic [7:0] sbox_op_char_matrix [NO_ROWS-1:0] [NO_COLS-1:0]     // sbox output
             );
 
     // sbox related variables
