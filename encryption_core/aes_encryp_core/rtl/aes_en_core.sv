@@ -35,10 +35,8 @@ module aes_en_core#(
     logic sbox_sub_valid;
     logic [7:0] sbox_sub_matrix [NO_ROWS-1:0][NO_COLS-1:0];
 
-    // local variables for shift row substitution
-    logic [7:0] temp_0;     // for shifting 1 byte
-    logic [7:0] temp_1;     // for shifting 2 bytes
-    logic [7:0] temp_2;     // for shifting 3 bytes
+    // mix column related variables
+    logic [7:0] galios_field_matrix [3:0][3:0];
 
     // main encryption logic 
     always @(posedge aes_clk or negedge resetn) begin
@@ -78,9 +76,11 @@ module aes_en_core#(
                         // shift rows
                         shift_rows();
                         // mix columns
-                         
+                        mix_columns();
+                        aes_round_counter += 10;  // need to be changed after debugging is done
                     end
                 end
+                
             end
             else begin  // aes core disable
                 cipher_text_rdy_o = 0;
@@ -142,6 +142,82 @@ module aes_en_core#(
     endtask
 
     task mix_columns();
+        logic [7:0] mix_column_matrix[3:0][3:0];
+        logic [7:0] result;
+
+        // initialization of mix_column_matrix
+        foreach(mix_column_matrix[i,j]) begin
+            mix_column_matrix[i][j] = 0;
+        end
+
+        // debug
+        for(int o=0; o<NO_ROWS; o++) begin
+            $display("sbox_sub_matrix[%0d][0]:%0h", o, sbox_sub_matrix[o][0]);
+        end
+
+        // the four values of each column is multiplied by Galios Field Matrix
+        for(int i=0; i<NO_ROWS; i++) begin
+            case(galios_field_matrix[0][i]) 
+                1:  begin
+                        if(sbox_sub_matrix[i][0][7] == 1) begin
+                            result = sbox_sub_matrix[i][0] ^ 8'h1b;     // todo
+                            $display("1st case with xor :: sbox_sub_matrix[i][0]: %0h, result: %0h", sbox_sub_matrix[i][0], result);
+                        end
+                        else begin
+                            result = sbox_sub_matrix[i][0] * 8'h1;      // todo
+                            $display("1st case without xor :: sbox_sub_matrix[i][0]: %0h, result: %0h", sbox_sub_matrix[i][0], result);
+                        end
+                    end
+                2:  begin
+                        if(sbox_sub_matrix[i][0][7] == 1) begin     // MSB bit is set. xor with additional 1b  // todo
+                            result = (sbox_sub_matrix[i][0] << 1) ^ 8'h1b;  // todo
+                            $display("2nd case with xor :: sbox_sub_matrix[i][0]: %0h, result: %0h", sbox_sub_matrix[i][0], result);
+                        end
+                        else begin  // MSB bit is not set. No xor
+                            result = sbox_sub_matrix[i][0] << 1;    // todo
+                            $display("2nd case without xor :: sbox_sub_matrix[i][0]: %0h, result: %0h", sbox_sub_matrix[i][0], result);
+                        end
+                    end
+                3:  begin
+                        if(sbox_sub_matrix[i][0][7] == 1) begin     // MSB bit is set. xor with additional 1b // todo
+                            result = ( (sbox_sub_matrix[i][0] << 1) ^ 8'h1b ) ^ sbox_sub_matrix[i][0];  // todo
+                            $display("3rd case with xor :: sbox_sub_matrix[i][0]: %0h, result: %0h", sbox_sub_matrix[i][0], result);
+                        end
+                        else begin
+                            result = (sbox_sub_matrix[i][0] << 1) ^ sbox_sub_matrix[i][0];  // todo
+                            $display("3rd case without xor :: sbox_sub_matrix[i][0]: %0h, result: %0h", sbox_sub_matrix[i][0], result);
+                        end
+                    end
+            endcase
+            mix_column_matrix[0][0] = mix_column_matrix[0][0] ^ result;  // todo
+        end
         
     endtask
+
+    /* galios field matrix
+        02  03  01  01
+        01  02  03  01
+        01  01  02  03
+        03  01  01  02
+    */
+    // generate galios_filed matrix
+    assign galios_field_matrix[0][0] = 8'h02;
+    assign galios_field_matrix[0][1] = 8'h03;
+    assign galios_field_matrix[0][2] = 8'h01;
+    assign galios_field_matrix[0][3] = 8'h01;
+
+    assign galios_field_matrix[1][0] = 8'h01;
+    assign galios_field_matrix[1][1] = 8'h02;
+    assign galios_field_matrix[1][2] = 8'h03;
+    assign galios_field_matrix[1][3] = 8'h01;
+
+    assign galios_field_matrix[2][0] = 8'h01;
+    assign galios_field_matrix[2][1] = 8'h01;
+    assign galios_field_matrix[2][2] = 8'h02;
+    assign galios_field_matrix[2][3] = 8'h03;
+
+    assign galios_field_matrix[3][0] = 8'h03;
+    assign galios_field_matrix[3][1] = 8'h01;
+    assign galios_field_matrix[3][2] = 8'h01;
+    assign galios_field_matrix[3][3] = 8'h02;
 endmodule
