@@ -1,19 +1,18 @@
 `timescale 1ns/1ps
 
-module sbox#(
-                // parameters
-                parameter NO_ROWS = 16,     // Number of Rows in input char matrix
-                parameter NO_COLS = 16      // Number of Columns in input char matrix
-            )(
-                // IO ports
-                input logic resetn,                                                     // reset (active low)
-                input logic sbox_en,                                                    // enable sbox 
-                input logic [7:0] sbox_ip_char_matrix [NO_ROWS-1:0] [NO_COLS-1:0],      // sbox input char matrix
-                input logic [NO_ROWS-1:0] sbox_ip_char_row_mask,                        // sbox row enable mask for selecting the rows for sbox substitution
-                input logic [NO_COLS-1:0] sbox_ip_char_col_mask,                        // sbox column enable mask for selecting the columns for sbox substitution
-                output logic sbox_op_char_matrix_valid,                                 // sbox output valid
-                output logic [7:0] sbox_op_char_matrix [NO_ROWS-1:0] [NO_COLS-1:0]     // sbox output
-            );
+module key_gen_sbox#(
+                        // parameters
+                        parameter NO_ROWS = 4,      // Number of Rows in input char matrix
+                        parameter SBOX_ROWS = 16,   // Number of Rows in sbox matrix
+                        parameter SBOX_COLS = 16    // Number of columns in sbox matrix
+                    )(
+                        // IO ports
+                        input logic resetn,                                       // reset (active low)
+                        input logic sbox_en,                                      // enable sbox 
+                        input logic [7:0] sbox_ip_char_matrix [NO_ROWS-1:0],      // sbox input char matrix
+                        output logic sbox_op_char_matrix_valid,                   // sbox output valid
+                        output logic [7:0] sbox_op_char_matrix [NO_ROWS-1:0]      // sbox output
+                    );
 
     // sbox related variables
     logic [7:0] sbox [15:0] [15:0];     // sbox matrix
@@ -30,16 +29,9 @@ module sbox#(
             if(sbox_en) begin
                 sbox_op_char_matrix_valid = 1;
                 for(logic [4:0] i=0; i<NO_ROWS; i++) begin
-                    for(logic [4:0] j=0; j<NO_COLS; j++) begin
-                        if(sbox_ip_char_row_mask[i] && sbox_ip_char_col_mask[j]) begin
-                            sbox_row_index = sbox_ip_char_matrix[i][j][7:4];
-                            sbox_col_index = sbox_ip_char_matrix[i][j][3:0];
-                            sbox_op_char_matrix[i][j] = sbox[sbox_row_index][sbox_col_index];
-                        end
-                        else begin
-                            sbox_op_char_matrix[i][j] = 0;
-                        end
-                    end
+                    sbox_row_index = sbox_ip_char_matrix[i][7:4];
+                    sbox_col_index = sbox_ip_char_matrix[i][3:0];
+                    sbox_op_char_matrix[i] = sbox[sbox_row_index][sbox_col_index];
                 end
             end
             else begin
