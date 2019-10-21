@@ -156,42 +156,45 @@ module aes_en_core#(
         end
 
         // the four values of each column is multiplied by Galios Field Matrix
-        for(int i=0; i<NO_ROWS; i++) begin
-            case(galios_field_matrix[0][i]) 
-                1:  begin
-                        if(sbox_sub_matrix[i][0][7] == 1) begin
-                            result = sbox_sub_matrix[i][0] ^ 8'h1b;     // todo
-                            $display("1st case with xor :: sbox_sub_matrix[i][0]: %0h, result: %0h", sbox_sub_matrix[i][0], result);
-                        end
-                        else begin
-                            result = sbox_sub_matrix[i][0] * 8'h1;      // todo
-                            $display("1st case without xor :: sbox_sub_matrix[i][0]: %0h, result: %0h", sbox_sub_matrix[i][0], result);
-                        end
-                    end
-                2:  begin
-                        if(sbox_sub_matrix[i][0][7] == 1) begin     // MSB bit is set. xor with additional 1b  // todo
-                            result = (sbox_sub_matrix[i][0] << 1) ^ 8'h1b;  // todo
-                            $display("2nd case with xor :: sbox_sub_matrix[i][0]: %0h, result: %0h", sbox_sub_matrix[i][0], result);
-                        end
-                        else begin  // MSB bit is not set. No xor
-                            result = sbox_sub_matrix[i][0] << 1;    // todo
-                            $display("2nd case without xor :: sbox_sub_matrix[i][0]: %0h, result: %0h", sbox_sub_matrix[i][0], result);
-                        end
-                    end
-                3:  begin
-                        if(sbox_sub_matrix[i][0][7] == 1) begin     // MSB bit is set. xor with additional 1b // todo
-                            result = ( (sbox_sub_matrix[i][0] << 1) ^ 8'h1b ) ^ sbox_sub_matrix[i][0];  // todo
-                            $display("3rd case with xor :: sbox_sub_matrix[i][0]: %0h, result: %0h", sbox_sub_matrix[i][0], result);
-                        end
-                        else begin
-                            result = (sbox_sub_matrix[i][0] << 1) ^ sbox_sub_matrix[i][0];  // todo
-                            $display("3rd case without xor :: sbox_sub_matrix[i][0]: %0h, result: %0h", sbox_sub_matrix[i][0], result);
-                        end
-                    end
-            endcase
-            mix_column_matrix[0][0] = mix_column_matrix[0][0] ^ result;  // todo
+        for(int i=0; i<NO_ROWS; i++) begin  // No of rows in galios field matrix
+            for(int j=0; j<NO_COLS; j++) begin  // No of columns in sbox_sub_matrix
+                mix_column_matrix[i][j] = 0;
+                for(int k=0; k<NO_ROWS; k++) begin  // No of rows in sbox_sub_matrix
+                    do_galios_multiplication(galios_field_matrix[i][k], sbox_sub_matrix[k][j], result);
+                    mix_column_matrix[i][j] = mix_column_matrix[i][j] ^ result;
+                end
+            end
         end
         
+    endtask
+
+    task do_galios_multiplication(input logic [7:0] gal_value, input logic [7:0] mat_value, output logic [7:0] result);
+        case(gal_value)
+            1:  begin
+                    if(mat_value[7] == 1) begin
+                        result = mat_value ^ 8'h1b;
+                    end
+                    else begin
+                        result = mat_value;
+                    end
+                end
+            2:  begin
+                    if(mat_value[7] == 1) begin
+                        result = (mat_value << 1) ^ 8'h1b;
+                    end
+                    else begin
+                        result = mat_value << 1;
+                    end
+                end
+            3:  begin
+                    if(mat_value[7] == 1) begin
+                        result = ((mat_value << 1) ^ 8'h1b ) ^ mat_value;
+                    end
+                    else begin
+                        result = (mat_value << 1 ) ^ mat_value;
+                    end
+                end
+        endcase
     endtask
 
     /* galios field matrix
