@@ -26,7 +26,9 @@ module aes_en_core#(
     logic [7:0] initial_matrix[NO_ROWS-1:0][NO_COLS-1:0];
 
     // variables rtelated to aes round control
+    logic initial_round_done;
     logic sub_byte_done;
+    logic shift_rw_mix_col_done;
 
     // local variables for sbox substitution control
     logic sbox_sub_en;
@@ -47,23 +49,36 @@ module aes_en_core#(
                 cipher_text_o[i][j] = 0;
             end
             aes_round_counter = 0;
+            initial_round_done = 0;
             sub_byte_done = 0;
             key_req_o = 0;
+            shift_rw_mix_col_done = 0;
         end
         else begin
             if(aes_core_en) begin
                 if(aes_round_counter == 0) begin   // initial aes_encryption round
-                    foreach(plain_text_i[i,j]) begin
-                        initial_matrix[i][j] = plain_text_i[i][j] ^ cipher_key_i[i][j];
+                    cipher_text_rdy_o = 0;  // cipher text is not produced yet
+                    if(!initial_round_done) begin  // request for cipher key
+                        key_req_o = 1;
+                        key_sel_o = 0;
+                        if(key_vld_i) begin
+                            initial_round_done = 1;
+                        end
                     end
-                    aes_round_counter += 1;
-                    sub_byte_done = 0;
-                    $display("initial matrix:%0p", initial_matrix);
+                    else begin
+                        foreach(plain_text_i[i,j]) begin
+                            initial_matrix[i][j] = plain_text_i[i][j] ^ cipher_key_i[i][j];
+                        end
+                        aes_round_counter += 1;
+                        sub_byte_done = 0;
+                        $display("initial matrix:%0p", initial_matrix);
+                    end
                 end
                 else if(aes_round_counter > 0 && aes_round_counter < 10) begin // perform 0-9 aes_encryption rounds
                     // sub bytes
                     if(!sub_byte_done) begin
                         if(!sbox_sub_valid) begin
+                            key_req_o = 0;
                             sbox_sub_en = 1;
                             sbox_row_mask = 4'hF;
                             sbox_col_mask = 4'hF;
@@ -73,20 +88,71 @@ module aes_en_core#(
                             sub_byte_done = 1;
                         end
                     end
-                    else begin  
+                    else if(!shift_rw_mix_col_done) begin  
                         // shift rows
                         shift_rows();
                         // mix columns
                         mix_columns(cipher_text_matrix);
-                        aes_round_counter += 10;  // need to be changed after debugging is done
+                        // request a round key
+                        key_req_o = 1;
+                        key_sel_o = aes_round_counter;
+                        shift_rw_mix_col_done = 1;
+                    end
+                    else if(key_vld_i) begin    // wait for valid round key to be delivered from aes_key_expander 
+                        // perform xor with mixed column cipher_text_matrix and round key
+                        foreach(initial_matrix[i,j]) begin
+                            initial_matrix[i][j] = cipher_text_matrix[i][j] ^ cipher_key_i[i][j];
+                        end
+                        aes_round_counter += 1;
+                        sub_byte_done = 0;
+                        shift_rw_mix_col_done = 0;
                     end
                 end
-                
+                else if(aes_round_counter == 10) begin    // last round
+                    // sub bytes
+                    if(!sub_byte_done) begin
+                        if(!sbox_sub_valid) begin
+                            key_req_o = 0;
+                            sbox_sub_en = 1;
+                            sbox_row_mask = 4'hF;
+                            sbox_col_mask = 4'hF;
+                        end
+                        else begin
+                            sbox_sub_en = 0;
+                            sub_byte_done = 1;
+                        end
+                    end
+                    else if(!shift_rw_mix_col_done) begin  
+                        // shift rows
+                        shift_rows();
+                        // request a round key
+                        key_req_o = 1;
+                        key_sel_o = aes_round_counter;
+                        shift_rw_mix_col_done = 1;
+                    end
+                    else if(key_vld_i) begin    // wait for valid round key to be delivered from aes_key_expander 
+                        // perform xor with shifted row sbox_sub_matrix and round key
+                        foreach(initial_matrix[i,j]) begin
+                            initial_matrix[i][j] = sbox_sub_matrix[i][j] ^ cipher_key_i[i][j];
+                        end
+                        aes_round_counter = 0;  // reset aes_round counter
+                        sub_byte_done = 0;
+                        shift_rw_mix_col_done = 0;
+                        initial_round_done = 0;
+                        // deliver cipher text output
+                        cipher_text_rdy_o = 1;
+                        foreach(cipher_text_o[i,j]) begin
+                            cipher_text_o[i][j] = initial_matrix[i][j];
+                        end
+                    end
+                end                
             end
             else begin  // aes core disable
                 cipher_text_rdy_o = 0;
                 aes_round_counter = 0;
+                initial_round_done = 0;
                 sub_byte_done = 0;
+                shift_rw_mix_col_done = 0;
             end
         end
     end
