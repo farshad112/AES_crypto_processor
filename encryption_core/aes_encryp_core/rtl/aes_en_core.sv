@@ -37,6 +37,7 @@ module aes_en_core#(
 
     // mix column related variables
     logic [7:0] galios_field_matrix [3:0][3:0];
+    logic [7:0] cipher_text_matrix [3:0][3:0];
 
     // main encryption logic 
     always @(posedge aes_clk or negedge resetn) begin
@@ -76,7 +77,7 @@ module aes_en_core#(
                         // shift rows
                         shift_rows();
                         // mix columns
-                        mix_columns();
+                        mix_columns(cipher_text_matrix);
                         aes_round_counter += 10;  // need to be changed after debugging is done
                     end
                 end
@@ -141,42 +142,33 @@ module aes_en_core#(
         end
     endtask
 
-    task mix_columns();
+    task mix_columns(output logic [7:0] result_matrix[3:0][3:0]);
         logic [7:0] mix_column_matrix[3:0][3:0];
         logic [7:0] result;
 
-        // initialization of mix_column_matrix
-        foreach(mix_column_matrix[i,j]) begin
-            mix_column_matrix[i][j] = 0;
-        end
-
-        // debug
-        for(int o=0; o<NO_ROWS; o++) begin
-            $display("sbox_sub_matrix[%0d][0]:%0h", o, sbox_sub_matrix[o][0]);
-        end
-
         // the four values of each column is multiplied by Galios Field Matrix
-        for(int i=0; i<NO_ROWS; i++) begin  // No of rows in galios field matrix
-            for(int j=0; j<NO_COLS; j++) begin  // No of columns in sbox_sub_matrix
-                mix_column_matrix[i][j] = 0;
-                for(int k=0; k<NO_ROWS; k++) begin  // No of rows in sbox_sub_matrix
-                    do_galios_multiplication(galios_field_matrix[i][k], sbox_sub_matrix[k][j], result);
-                    mix_column_matrix[i][j] = mix_column_matrix[i][j] ^ result;
+        for(int i=0; i<NO_COLS; i++) begin  // No of column in sbox_sub_matrix
+            for(int j=0; j<NO_ROWS; j++) begin  // No of rows in galios_field_matrix
+                mix_column_matrix[j][i] = 0;
+                for(int k=0; k<NO_ROWS; k++) begin  // No of rows in sbox_sub_matrix and no of columns in galios_field_matrix
+//                    $display("galios_field_matrix[%0d][%0d]:%0h, sbox_sub_matrix[%0d][%0d]:%0h", j, k, galios_field_matrix[j][k], k,i, sbox_sub_matrix[k][i]);
+                    do_galios_multiplication(galios_field_matrix[j][k], sbox_sub_matrix[k][i], result);  // perform matrix multiplication 
+//                    $display("result:%0h", result);
+                    mix_column_matrix[j][i] = mix_column_matrix[j][i] ^ result;
+//                    $display("mix_column_matrix[%0d][%0d]:%0h", j, i, mix_column_matrix[j][i]);
                 end
             end
+        end        
+        // send the output
+        foreach(result_matrix[i,j]) begin
+            result_matrix[i][j] = mix_column_matrix[i][j];
         end
-        
     endtask
 
     task do_galios_multiplication(input logic [7:0] gal_value, input logic [7:0] mat_value, output logic [7:0] result);
         case(gal_value)
             1:  begin
-                    if(mat_value[7] == 1) begin
-                        result = mat_value ^ 8'h1b;
-                    end
-                    else begin
-                        result = mat_value;
-                    end
+                    result = mat_value;
                 end
             2:  begin
                     if(mat_value[7] == 1) begin
