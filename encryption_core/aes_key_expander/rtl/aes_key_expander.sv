@@ -11,6 +11,7 @@ module aes_key_expander#(
                             input logic resetn,
                             input logic encrypt_en,
                             input logic clk,
+                            input logic key_req,
                             input logic [3:0] key_sel,
                             output logic key_rdy,
                             output logic [7:0] round_key[3:0][3:0]
@@ -125,27 +126,32 @@ module aes_key_expander#(
                         sbox_en = 0;
                     end    
                     else begin
-                        key_rdy = 1;
                         key_gen_done = 1;
                     end
                 end
                 else begin  // key is ready to deliver
-                    // deleiver the generated key to the output based on the selector pin
-                    if(key_sel == 0) begin
-                        foreach(round_key[i,j]) begin
-                            round_key[i][j] = cipher_key[i][j];
+                    if(key_req) begin   // encryptor has requested for a valid key
+                        key_rdy = 1;
+                        // deleiver the generated key to the output based on the selector pin
+                        if(key_sel == 0) begin
+                            foreach(round_key[i,j]) begin
+                                round_key[i][j] = cipher_key[i][j];
+                            end
+                        end
+                        else if(key_sel> 0 && key_sel < 11) begin
+                            foreach(round_key[i,j]) begin
+                                round_key[i][j] = round_key_matrix[i][j][key_sel-1];
+                            end
+                        end
+                        else begin  // invalid key selector value
+                            key_rdy = 0;
+                            foreach(round_key[i,j]) begin
+                                round_key[i][j] = 0;
+                            end
                         end
                     end
-                    else if(key_sel> 0 && key_sel < 11) begin
-                        foreach(round_key[i,j]) begin
-                            round_key[i][j] = round_key_matrix[i][j][key_sel-1];
-                        end
-                    end
-                    else begin  // invalid key selector value
+                    else begin
                         key_rdy = 0;
-                        foreach(round_key[i,j]) begin
-                            round_key[i][j] = 0;
-                        end
                     end
                 end
             end
