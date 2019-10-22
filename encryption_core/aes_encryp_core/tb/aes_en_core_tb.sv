@@ -18,7 +18,7 @@ module aes_en_core_tb;
     logic [7:0] round_key [3:0][3:0];
 
 
-    assign encrypt_key = (round_key_gen_en == 0) ? cipher_key : round_key;  
+    assign encrypt_key = round_key;  
 
     // clock generation block
     initial begin
@@ -86,6 +86,10 @@ module aes_en_core_tb;
         aes_encrypt_mode_en = 1;
     end
 
+    always @(posedge key_req) begin
+        round_key_gen_en = 1;
+    end
+
     // simulation stop block
     initial begin
         repeat(200) 
@@ -107,7 +111,7 @@ module aes_en_core_tb;
                     .aes_core_en(aes_core_en),                  // input
                     .aes_encrypt_mode_en(aes_encrypt_mode_en),  // input
                     .plain_text_i(plain_text),                  // input
-                    .cipher_key_i(encrypt_key),                 // input
+                    .cipher_key_i(round_key),                   // input
                     .key_vld_i(key_vld),                        // input
                     .key_req_o(key_req),                        // output
                     .key_sel_o(key_sel),                        // output
@@ -125,8 +129,9 @@ module aes_en_core_tb;
                         // IO ports
                         .cipher_key(cipher_key),
                         .resetn(resetn),
-                        .encrypt_en(round_key_gen_en),
+                        .encrypt_en(aes_core_en),
                         .clk(aes_clk),
+                        .key_req(key_req),
                         .key_sel(key_sel),
                         .key_rdy(key_vld),
                         .round_key(round_key)
