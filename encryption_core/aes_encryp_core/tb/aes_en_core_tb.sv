@@ -5,20 +5,18 @@ module aes_en_core_tb;
     logic       resetn;
     logic       aes_core_en;
     logic       aes_encrypt_mode_en;
+    logic       plain_text_vld_i;
+    logic       plain_text_rdy_o;
     logic [7:0] plain_text [3:0][3:0];
     logic [7:0] cipher_key [3:0][3:0];
-    logic key_vld;
-    logic key_req;
-    logic [3:0] key_sel;
-    logic cipher_text_rdy;
-    logic [7:0] cipher_text [3:0][3:0];
-
-    logic round_key_gen_en;
-    logic [7:0] encrypt_key [3:0][3:0];
     logic [7:0] round_key [3:0][3:0];
-
-
-    assign encrypt_key = round_key;  
+    logic       key_vld;
+    logic       key_req;
+    logic [3:0] key_sel;
+    logic       cipher_text_rdy;
+    logic [7:0] cipher_text [3:0][3:0];
+    logic       cipher_text_ack_i;
+    logic       cipher_text_rdy_o; 
 
     // clock generation block
     initial begin
@@ -77,17 +75,18 @@ module aes_en_core_tb;
     // testing block
     initial begin
         resetn = 0;
-        round_key_gen_en = 0;
         aes_core_en = 0;
         aes_encrypt_mode_en = 0;
+        plain_text_vld_i = 0;
+        cipher_text_ack_i = 0;
         #30ns;
         resetn = 1;
         aes_core_en = 1;
         aes_encrypt_mode_en = 1;
-    end
-
-    always @(posedge key_req) begin
-        round_key_gen_en = 1;
+        plain_text_vld_i = 1;
+        wait(plain_text_rdy_o);
+        wait(cipher_text_rdy);
+        cipher_text_ack_i = 1;
     end
 
     // simulation stop block
@@ -111,11 +110,14 @@ module aes_en_core_tb;
                     .aes_core_en(aes_core_en),                  // input
                     .aes_encrypt_mode_en(aes_encrypt_mode_en),  // input
                     .plain_text_i(plain_text),                  // input
+                    .plain_text_vld_i(plain_text_vld_i),        // input
+                    .plain_text_rdy_o(plain_text_rdy_o),        // output
                     .cipher_key_i(round_key),                   // input
                     .key_vld_i(key_vld),                        // input
                     .key_req_o(key_req),                        // output
                     .key_sel_o(key_sel),                        // output
                     .cipher_text_rdy_o(cipher_text_rdy),        // output
+                    .cipher_text_ack_i(cipher_text_ack_i),      // input
                     .cipher_text_o(cipher_text)                 // output
                 );
     
