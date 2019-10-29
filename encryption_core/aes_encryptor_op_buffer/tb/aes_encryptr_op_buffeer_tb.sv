@@ -12,7 +12,7 @@ module aes_encryptr_op_buf_tb;
     logic ofdm_tx_rdy;
     logic ofdm_tx_sdata;
 
-    logic [255:0] ofdm_sdata_buffer;
+    logic [2047:0] ofdm_sdata_buffer;
     logic [16:0] ofdm_sdata_buf_cntr;
 
     // aes_clk generation block
