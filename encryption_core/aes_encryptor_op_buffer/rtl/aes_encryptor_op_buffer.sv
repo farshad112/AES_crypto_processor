@@ -22,7 +22,7 @@ module aes_encryptor_op_buffer #(
     logic [7:0] cipher_txt_mem [MEM_SIZE-1:0];
     logic [16:0] aes_wr_ptr;
     logic [16:0] ofdm_rd_ptr;
-    logic [3:0] ofdm_sdata_bit_cntr;
+    logic [2:0] ofdm_sdata_bit_cntr;
     logic wr_ptr_rollover_flag;
     logic rd_ptr_rollover_flag;
 
@@ -51,7 +51,7 @@ module aes_encryptor_op_buffer #(
                     aes_wr_ptr = 0;
                     cipher_txt_rdy = 1;
                 end
-                else begin  // rollover is not possible and fifo is full
+                else if(aes_wr_ptr >= MEM_SIZE) begin  // rollover is not possible and fifo is full
                     cipher_txt_rdy = 0;
                 end
             end
@@ -70,7 +70,7 @@ module aes_encryptor_op_buffer #(
                     aes_wr_ptr = 0;
                     cipher_txt_rdy = 1;
                 end
-                else begin  // rollover is not possible and fifo is full
+                else if(aes_wr_ptr >= MEM_SIZE)begin  // rollover is not possible and fifo is full
                     cipher_txt_rdy = 0;
                 end
             end
@@ -88,7 +88,7 @@ module aes_encryptor_op_buffer #(
         end
         else begin
             if(!rd_ptr_rollover_flag) begin
-                if(ofdm_rd_ptr == aes_wr_ptr) begin  // fifo is empty
+                if((ofdm_rd_ptr == aes_wr_ptr) && (wr_ptr_rollover_flag == 0)) begin  // fifo is empty
                     ofdm_sdata_vld = 0;
                     ofdm_sdata = 0;
                 end
@@ -110,7 +110,7 @@ module aes_encryptor_op_buffer #(
                 end
             end
             else begin  // rollover logic
-                if(ofdm_rd_ptr == aes_wr_ptr) begin  // fifo is empty
+                if((ofdm_rd_ptr == aes_wr_ptr) && (wr_ptr_rollover_flag == 0)) begin  // fifo is empty
                     ofdm_sdata_vld = 0;
                     ofdm_sdata = 0;
                 end
