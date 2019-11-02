@@ -18,7 +18,9 @@ module aes_decryp_core#(
                         output logic key_req_o,                                     // request for a round key
                         output logic [3:0] key_sel_o,                               // round key selector 
                         output logic plain_text_rdy_o,                              // cipher text is rdy
-                        input logic [7:0] cipher_text_i [NO_ROWS-1:0][NO_COLS-1:0]  // cipher text matrix
+                        input logic [7:0] cipher_text_i [NO_ROWS-1:0][NO_COLS-1:0], // cipher text matrix
+                        output logic cipher_text_rdy_o,                             // ready  for cipher matrix
+                        input logic cipher_text_vld_i                               // cipher text matrix valid
                     );
     
     // variable declaration
@@ -47,6 +49,7 @@ module aes_decryp_core#(
     always @(posedge aes_clk or negedge resetn) begin
         if(!resetn) begin
             plain_text_rdy_o = 0;
+            cipher_text_rdy_o = 1;
             isbox_sub_en = 0;
             foreach(plain_text_o[i,j]) begin
                 plain_text_o[i][j] = 0;
@@ -66,92 +69,98 @@ module aes_decryp_core#(
             key_req_o = 0;
             add_round_key_done = 0;
             ishift_rw_mix_col_done = 0;
+            key_sel_o = 10;
         end
         else begin
             if(aes_core_en) begin
-                if(aes_round_counter == 0) begin   // initial aes_decryption round
-                    plain_text_rdy_o = 0;  // plain text is not produced yet
-                    if(!initial_round_done) begin  // request for round key 10
-                        key_req_o = 1;
-                        key_sel_o = 10;
-                        if(key_vld_i) begin
-                            initial_round_done = 1;
+                cipher_text_rdy_o = 1;
+                if(cipher_text_vld_i) begin
+                    if(aes_round_counter == 0) begin   // initial aes_decryption round
+                        plain_text_rdy_o = 0;  // plain text is not produced yet
+                        if(!initial_round_done) begin  // request for round key 10
+                            key_req_o = 1;
+                            key_sel_o = 10;
+                            if(key_vld_i) begin
+                                initial_round_done = 1;
+                            end
+                        end
+                        else begin
+                            foreach(cipher_text_i[i,j]) begin
+                                initial_matrix[i][j] = cipher_text_i[i][j] ^ cipher_key_i[i][j];
+                            end
+                            // inverse shift rows
+                            inverse_shift_rows(initial_matrix, initial_matrix);
+                            // inverse sub_bytes
+                            if(!isbox_sub_valid) begin
+                                key_req_o = 0;
+                                isbox_sub_en = 1;
+                                isbox_row_mask = 4'hF;
+                                isbox_col_mask = 4'hF;
+                            end
+                            else begin
+                                isbox_sub_en = 0;
+                                aes_round_counter += 1;
+                                $display("isbox_sub_matrix:%0p", isbox_sub_matrix);
+                            end
                         end
                     end
-                    else begin
-                        foreach(cipher_text_i[i,j]) begin
-                            initial_matrix[i][j] = cipher_text_i[i][j] ^ cipher_key_i[i][j];
+                    else if(aes_round_counter > 0 && aes_round_counter < 10) begin // perform 0-9 aes_decryption rounds
+                        cipher_text_rdy_o = 0;
+                        // add round key
+                        if(!add_round_key_done) begin
+                            key_req_o = 1;
+                            key_sel_o = 10 - aes_round_counter;  // request for consecutive round_key i.e. round_key9,round_key8,round_key7....round_key1
+                            if(key_vld_i) begin
+                                foreach(initial_matrix[i,j]) begin  // round_key addition with isbox_sub_matrix
+                                    initial_matrix[i][j] = isbox_sub_matrix[i][j] ^ cipher_key_i[i][j];
+                                end
+                                add_round_key_done = 1;
+                            end
                         end
-                        // inverse shift rows
-                        inverse_shift_rows(initial_matrix, initial_matrix);
-                        // inverse sub_bytes
-                        if(!isbox_sub_valid) begin
+                        else if(!ishift_rw_mix_col_done) begin
                             key_req_o = 0;
+                            // inverse mix column
+                            inverse_mix_columns(cipher_text_matrix);
+                            // inverse shift rows
+                            inverse_shift_rows(cipher_text_matrix, initial_matrix);
+                            ishift_rw_mix_col_done = 1;
+                        end
+                        // inverse sub_bytes
+                        else if(!isbox_sub_valid) begin
                             isbox_sub_en = 1;
                             isbox_row_mask = 4'hF;
                             isbox_col_mask = 4'hF;
                         end
                         else begin
-                            isbox_sub_en = 0;
-                            aes_round_counter += 1;
-                            $display("isbox_sub_matrix:%0p", isbox_sub_matrix);
+                                isbox_sub_en = 0;
+                                aes_round_counter += 1;
+                                $display("isbox_sub_matrix:%0p", isbox_sub_matrix);
+                                add_round_key_done = 0;
+                                ishift_rw_mix_col_done = 0;
+                                // request for cipher key for the last round
+                                key_req_o = 1;
+                                key_sel_o = 10 - aes_round_counter;     // request for cipher key
                         end
                     end
-                end
-                else if(aes_round_counter > 0 && aes_round_counter < 10) begin // perform 0-9 aes_decryption rounds
-                    // add round key
-                    if(!add_round_key_done) begin
-                        key_req_o = 1;
-                        key_sel_o = 10 - aes_round_counter;  // request for consecutive round_key i.e. round_key9,round_key8,round_key7....round_key1
+                    else if(aes_round_counter == 10) begin    // last round
+                        cipher_text_rdy_o = 0;
+                        // xor with cipher key to retrieve plain_text matrix
                         if(key_vld_i) begin
-                            foreach(initial_matrix[i,j]) begin  // round_key addition with isbox_sub_matrix
-                                initial_matrix[i][j] = isbox_sub_matrix[i][j] ^ cipher_key_i[i][j];
+                            foreach(plain_text_matrix[i,j]) begin
+                                plain_text_matrix[i][j] = isbox_sub_matrix[i][j] ^ cipher_key_i[i][j];
                             end
-                            add_round_key_done = 1;
+                            key_req_o = 0;
+                            // drive output
+                            foreach(plain_text_o[i,j]) begin
+                                plain_text_o [i][j] = plain_text_matrix[i][j];
+                            end
+                            plain_text_rdy_o = 1;
+                            aes_round_counter = 0;
+                            initial_round_done = 0;
                         end
-                    end
-                    else if(!ishift_rw_mix_col_done) begin
-                        key_req_o = 0;
-                        // inverse mix column
-                        inverse_mix_columns(cipher_text_matrix);
-                        // inverse shift rows
-                        inverse_shift_rows(cipher_text_matrix, initial_matrix);
-                        ishift_rw_mix_col_done = 1;
-                    end
-                    // inverse sub_bytes
-                    else if(!isbox_sub_valid) begin
-                        isbox_sub_en = 1;
-                        isbox_row_mask = 4'hF;
-                        isbox_col_mask = 4'hF;
-                    end
-                    else begin
-                            isbox_sub_en = 0;
-                            aes_round_counter += 1;
-                            $display("isbox_sub_matrix:%0p", isbox_sub_matrix);
-                            add_round_key_done = 0;
-                            ishift_rw_mix_col_done = 0;
-                            // request for cipher key for the last round
-                            key_req_o = 1;
-                            key_sel_o = 10 - aes_round_counter;     // request for cipher key
-                    end
+                    end 
                 end
-                else if(aes_round_counter == 10) begin    // last round
-                    // xor with cipher key to retrieve plain_text matrix
-                    if(key_vld_i) begin
-                        foreach(plain_text_matrix[i,j]) begin
-                            plain_text_matrix[i][j] = isbox_sub_matrix[i][j] ^ cipher_key_i[i][j];
-                        end
-                        key_req_o = 0;
-                        // drive output
-                        foreach(plain_text_o[i,j]) begin
-                            plain_text_o [i][j] = plain_text_matrix[i][j];
-                        end
-                        plain_text_rdy_o = 1;
-                        aes_round_counter = 0;
-                        initial_round_done = 0;
-                    end
-                end               
-            end
+            end 
             else begin  // aes core disable
                 plain_text_rdy_o = 0;
                 aes_round_counter = 0;
